@@ -1,14 +1,16 @@
 
-
 name: Assign Copilot to Issues
 
-on:
+"on":
   issues:
     types: [opened]
 
 jobs:
   assign-copilot:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
     steps:
       - name: Assign Copilot
         uses: actions/github-script@v7
@@ -19,9 +21,58 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
-            await github.rest.issues.addAssignees({
-              owner,
-              repo,
-              issue_number: issueNumber,
-              assignees: ['Copilot']
-            });
+            try {
+              console.log(`Attempting to assign Copilot to issue #${issueNumber}`);
+              
+              // List of possible assignees to try in order
+              const possibleAssignees = ['Copilot', 'copilot-swe-agent', owner];
+              let assignmentSuccessful = false;
+              
+              for (const assignee of possibleAssignees) {
+                try {
+                  console.log(`Trying to assign: ${assignee}`);
+                  
+                  // Check if the user can be assigned (is a collaborator)
+                  try {
+                    await github.rest.repos.checkCollaborator({
+                      owner,
+                      repo,
+                      username: assignee
+                    });
+                    console.log(`${assignee} is a collaborator`);
+                  } catch (collabError) {
+                    console.log(`${assignee} is not a collaborator, skipping...`);
+                    continue;
+                  }
+                  
+                  await github.rest.issues.addAssignees({
+                    owner,
+                    repo,
+                    issue_number: issueNumber,
+                    assignees: [assignee]
+                  });
+                  
+                  console.log(`Successfully assigned ${assignee} to issue #${issueNumber}`);
+                  assignmentSuccessful = true;
+                  break;
+                } catch (assignError) {
+                  console.log(`Failed to assign ${assignee}: ${assignError.message}`);
+                  continue;
+                }
+              }
+              
+              if (!assignmentSuccessful) {
+                throw new Error('All assignment attempts failed');
+              }
+              
+            } catch (error) {
+              console.error('Failed to assign anyone to issue:', error.message);
+              
+              // Add a comment to the issue explaining the assignment failure
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                body: '🤖 **Auto-assignment failed**\n\nUnable to automatically assign this issue to any coding agent. Please manually assign it to the appropriate team member.\n\n**Attempted assignees:** Copilot, copilot-swe-agent, repository owner\n\n**Error:** ' + error.message
+              });
+            }
