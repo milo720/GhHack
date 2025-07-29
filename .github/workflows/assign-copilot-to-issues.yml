@@ -1,8 +1,6 @@
-
-
 name: Assign Copilot to Issues
 
-on:
+'on':
   issues:
     types: [opened]
 
