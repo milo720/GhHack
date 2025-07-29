@@ -119,10 +119,42 @@ The application includes comprehensive tests for:
 - Quote generation functionality
 - User interaction flows
 
-Run tests with:
+Run unit tests with:
 ```bash
 npm test
 ```
+
+### End-to-End Testing with Playwright
+
+The application includes a comprehensive Playwright test suite covering:
+- ✅ Application loading and form rendering
+- ✅ Form field validation (required fields, input types)
+- ✅ Quote generation with various parameters
+- ✅ Quote calculation logic verification
+- ✅ Form reset functionality
+- ✅ Unique quote number generation
+- ✅ Mobile and responsive design testing
+- ✅ Edge cases and boundary testing
+
+Run Playwright tests with:
+```bash
+# Run all E2E tests
+npm run test:e2e
+
+# Run tests with UI mode (recommended for development)
+npm run test:e2e:ui
+
+# Run tests with browser visible
+npm run test:e2e:headed
+
+# Run tests in debug mode
+npm run test:e2e:debug
+
+# View test reports
+npm run test:e2e:report
+```
+
+For more details about the test suite, see `tests/e2e/README.md`.
 
 ## Contributing
 
