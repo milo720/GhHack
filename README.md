@@ -113,16 +113,34 @@ The application uses a simple algorithm to calculate insurance quotes:
 
 ## Testing
 
-The application includes comprehensive tests for:
+The application includes comprehensive testing:
+
+### Unit Tests (React Testing Library)
+The application includes unit tests for:
 - Component rendering
 - Form field validation
 - Quote generation functionality
 - User interaction flows
 
-Run tests with:
+Run unit tests with:
 ```bash
 npm test
 ```
+
+### End-to-End Tests (Playwright)
+Comprehensive E2E tests covering:
+- Full user journeys
+- Form validation
+- Quote calculation accuracy
+- Reset functionality
+- Responsive design
+
+Run E2E tests with:
+```bash
+npm run test:e2e
+```
+
+For more details on E2E testing, see [tests/README.md](tests/README.md).
 
 ## Contributing
 
