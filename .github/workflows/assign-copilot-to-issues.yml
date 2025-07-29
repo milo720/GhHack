@@ -24,40 +24,77 @@ jobs:
             try {
               console.log(`Attempting to assign Copilot to issue #${issueNumber}`);
               
-              // List of possible assignees to try in order
-              const possibleAssignees = ['Copilot', 'copilot-swe-agent', owner];
               let assignmentSuccessful = false;
               
-              for (const assignee of possibleAssignees) {
-                try {
-                  console.log(`Trying to assign: ${assignee}`);
-                  
-                  // Check if the user can be assigned (is a collaborator)
+              // First, try to assign Copilot using GraphQL API
+              try {
+                console.log('Trying to assign Copilot using GraphQL API...');
+                
+                // Get the issue node ID for GraphQL
+                const issueData = await github.rest.issues.get({
+                  owner,
+                  repo,
+                  issue_number: issueNumber
+                });
+                
+                const issueNodeId = issueData.data.node_id;
+                
+                // Use GraphQL to assign Copilot
+                const mutation = `
+                  mutation AssignCopilot($issueId: ID!) {
+                    assignCopilotToIssue(input: {issueId: $issueId}) {
+                      issue {
+                        id
+                        number
+                      }
+                    }
+                  }
+                `;
+                
+                await github.graphql(mutation, {
+                  issueId: issueNodeId
+                });
+                
+                console.log(`Successfully assigned Copilot to issue #${issueNumber} using GraphQL`);
+                assignmentSuccessful = true;
+                
+              } catch (copilotError) {
+                console.log(`Failed to assign Copilot via GraphQL: ${copilotError.message}`);
+                
+                // If GraphQL fails, try fallback assignees using REST API
+                const fallbackAssignees = ['copilot-swe-agent', owner];
+                
+                for (const assignee of fallbackAssignees) {
                   try {
-                    await github.rest.repos.checkCollaborator({
+                    console.log(`Trying fallback assignment: ${assignee}`);
+                    
+                    // Check if the user can be assigned (is a collaborator)
+                    try {
+                      await github.rest.repos.checkCollaborator({
+                        owner,
+                        repo,
+                        username: assignee
+                      });
+                      console.log(`${assignee} is a collaborator`);
+                    } catch (collabError) {
+                      console.log(`${assignee} is not a collaborator, skipping...`);
+                      continue;
+                    }
+                    
+                    await github.rest.issues.addAssignees({
                       owner,
                       repo,
-                      username: assignee
+                      issue_number: issueNumber,
+                      assignees: [assignee]
                     });
-                    console.log(`${assignee} is a collaborator`);
-                  } catch (collabError) {
-                    console.log(`${assignee} is not a collaborator, skipping...`);
+                    
+                    console.log(`Successfully assigned ${assignee} to issue #${issueNumber}`);
+                    assignmentSuccessful = true;
+                    break;
+                  } catch (assignError) {
+                    console.log(`Failed to assign ${assignee}: ${assignError.message}`);
                     continue;
                   }
-                  
-                  await github.rest.issues.addAssignees({
-                    owner,
-                    repo,
-                    issue_number: issueNumber,
-                    assignees: [assignee]
-                  });
-                  
-                  console.log(`Successfully assigned ${assignee} to issue #${issueNumber}`);
-                  assignmentSuccessful = true;
-                  break;
-                } catch (assignError) {
-                  console.log(`Failed to assign ${assignee}: ${assignError.message}`);
-                  continue;
                 }
               }
               
@@ -73,6 +110,6 @@ jobs:
                 owner,
                 repo,
                 issue_number: issueNumber,
-                body: '🤖 **Auto-assignment failed**\n\nUnable to automatically assign this issue to any coding agent. Please manually assign it to the appropriate team member.\n\n**Attempted assignees:** Copilot, copilot-swe-agent, repository owner\n\n**Error:** ' + error.message
+                body: '🤖 **Auto-assignment failed**\n\nUnable to automatically assign this issue to any coding agent. Please manually assign it to the appropriate team member.\n\n**Attempted methods:**\n- Copilot (via GraphQL API)\n- copilot-swe-agent (via REST API)\n- Repository owner (via REST API)\n\n**Error:** ' + error.message
               });
             }
