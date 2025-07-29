@@ -21,95 +21,67 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
-            try {
-              console.log(`Attempting to assign Copilot to issue #${issueNumber}`);
-              
-              let assignmentSuccessful = false;
-              
-              // First, try to assign Copilot using GraphQL API
-              try {
-                console.log('Trying to assign Copilot using GraphQL API...');
-                
-                // Get the issue node ID for GraphQL
-                const issueData = await github.rest.issues.get({
-                  owner,
-                  repo,
-                  issue_number: issueNumber
-                });
-                
-                const issueNodeId = issueData.data.node_id;
-                
-                // Use GraphQL to assign Copilot
-                const mutation = `
-                  mutation AssignCopilot($issueId: ID!) {
-                    assignCopilotToIssue(input: {issueId: $issueId}) {
-                      issue {
+            // Step 1: Verify that Copilot coding agent is enabled
+            const suggestedActorsQuery = `
+              query {
+                repository(owner: "${owner}", name: "${repo}") {
+                  suggestedActors(capabilities: [CAN_BE_ASSIGNED], first: 100) {
+                    nodes {
+                      login
+                      __typename
+                      ... on Bot {
                         id
-                        number
+                      }
+                      ... on User {
+                        id
                       }
                     }
                   }
-                `;
-                
-                await github.graphql(mutation, {
-                  issueId: issueNodeId
-                });
-                
-                console.log(`Successfully assigned Copilot to issue #${issueNumber} using GraphQL`);
-                assignmentSuccessful = true;
-                
-              } catch (copilotError) {
-                console.log(`Failed to assign Copilot via GraphQL: ${copilotError.message}`);
-                
-                // If GraphQL fails, try fallback assignees using REST API
-                const fallbackAssignees = ['copilot-swe-agent', owner];
-                
-                for (const assignee of fallbackAssignees) {
-                  try {
-                    console.log(`Trying fallback assignment: ${assignee}`);
-                    
-                    // Check if the user can be assigned (is a collaborator)
-                    try {
-                      await github.rest.repos.checkCollaborator({
-                        owner,
-                        repo,
-                        username: assignee
-                      });
-                      console.log(`${assignee} is a collaborator`);
-                    } catch (collabError) {
-                      console.log(`${assignee} is not a collaborator, skipping...`);
-                      continue;
-                    }
-                    
-                    await github.rest.issues.addAssignees({
-                      owner,
-                      repo,
-                      issue_number: issueNumber,
-                      assignees: [assignee]
-                    });
-                    
-                    console.log(`Successfully assigned ${assignee} to issue #${issueNumber}`);
-                    assignmentSuccessful = true;
-                    break;
-                  } catch (assignError) {
-                    console.log(`Failed to assign ${assignee}: ${assignError.message}`);
-                    continue;
+                }
+              }
+            `;
+
+            const suggestedActorsResult = await github.graphql(suggestedActorsQuery);
+            const copilotBot = suggestedActorsResult.repository.suggestedActors.nodes.find(
+              node => node.login === 'copilot-swe-agent'
+            );
+
+            if (!copilotBot) {
+              throw new Error('Copilot coding agent is not enabled for this repository');
+            }
+
+            // Step 2: Fetch the GraphQL global ID of the issue
+            const issueQuery = `
+              query {
+                repository(owner: "${owner}", name: "${repo}") {
+                  issue(number: ${issueNumber}) {
+                    id
+                    title
                   }
                 }
               }
-              
-              if (!assignmentSuccessful) {
-                throw new Error('All assignment attempts failed');
+            `;
+
+            const issueResult = await github.graphql(issueQuery);
+            const issueId = issueResult.repository.issue.id;
+
+            // Step 3: Assign the existing issue to Copilot
+            const assignMutation = `
+              mutation {
+                replaceActorsForAssignable(input: {assignableId: "${issueId}", actorIds: ["${copilotBot.id}"]}) {
+                  assignable {
+                    ... on Issue {
+                      id
+                      title
+                      assignees(first: 10) {
+                        nodes {
+                          login
+                        }
+                      }
+                    }
+                  }
+                }
               }
-              
-            } catch (error) {
-              console.error('Failed to assign anyone to issue:', error.message);
-              
-              // Add a comment to the issue explaining the assignment failure
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: issueNumber,
-                body: '🤖 **Auto-assignment failed**\n\nUnable to automatically assign this issue to any coding agent. Please manually assign it to the appropriate team member.\n\n**Attempted methods:**\n- Copilot (via GraphQL API)\n- copilot-swe-agent (via REST API)\n- Repository owner (via REST API)\n\n**Error:** ' + error.message
-              });
-            }
+            `;
+
+            await github.graphql(assignMutation);
